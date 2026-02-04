@@ -3,48 +3,1004 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>My GitHub App</title>
+  <title>Kaitlyn & Angel: Valentine</title>
   <style>
-    body { font-family: system-ui, Arial; margin: 0; padding: 24px; background: #0b0f19; color: #e8eefc; }
-    .card { max-width: 720px; margin: 0 auto; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 18px; }
-    button { padding: 10px 14px; border: 0; border-radius: 12px; cursor: pointer; font-weight: 600; }
-    button:hover { filter: brightness(1.05); }
-    input { width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.25); color: #e8eefc; }
-    .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
-    .out { margin-top: 14px; padding: 12px; border-radius: 12px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.12); min-height: 42px; white-space: pre-wrap; }
+    html, body { height: 100%; margin: 0; background:#0b0f19; overflow:hidden; }
+    canvas { display:block; margin:0 auto; image-rendering: pixelated; image-rendering: crisp-edges; }
+
+    #hud {
+      position: fixed; left: 14px; bottom: 14px;
+      font-family: system-ui, Arial; font-size: 14px; color: rgba(255,255,255,0.85);
+      background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.12);
+      padding: 10px 12px; border-radius: 12px;
+      backdrop-filter: blur(6px);
+      max-width: 420px;
+      user-select: none;
+    }
+    #hud b { color:#fff; }
+    #status { opacity: 0.95; }
+
+    #dialogueUI {
+      position: fixed; left: 50%; transform: translateX(-50%);
+      bottom: 18px; width: min(860px, calc(100vw - 28px));
+      display: none;
+      font-family: system-ui, Arial;
+      user-select: none;
+    }
+    #choices {
+      display:flex; gap: 12px; justify-content:center; align-items:center;
+      padding: 10px;
+      background: rgba(0,0,0,0.40);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      backdrop-filter: blur(8px);
+    }
+    .choiceBtn {
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.10);
+      color: white;
+      border-radius: 12px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-weight: 800;
+      transition: transform 120ms ease, filter 120ms ease, padding 120ms ease, font-size 120ms ease;
+    }
+    .choiceBtn:hover { filter: brightness(1.12); transform: translateY(-1px); }
+
+    #midMsg {
+      color: rgba(255,255,255,0.92);
+      font-weight: 800;
+      padding: 6px 10px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      display:none;
+      white-space: nowrap;
+    }
+
+    #endOverlay {
+      position: fixed; inset: 0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      background: rgba(0,0,0,0.75);
+      color: white;
+      font-family: system-ui, Arial;
+      font-size: clamp(36px, 6vw, 96px);
+      font-weight: 950;
+      letter-spacing: 2px;
+      user-select: none;
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1 style="margin:0 0 10px;">GitHub Pages App</h1>
-    <p style="margin:0 0 16px; opacity:.85;">Tell me what you want this to do and I’ll customize it.</p>
+  <canvas id="game" width="960" height="540"></canvas>
 
-    <div class="row">
-      <input id="userInput" placeholder="Type something..." />
-      <button id="runBtn">Run</button>
-    </div>
-
-    <div class="out" id="output">Output will appear here.</div>
+  <div id="hud">
+    <b>Controls</b><br>
+    Right-click: move (click-to-move)<br>
+    Left-click: interact (when something glows)<br>
+    <span id="status"></span>
   </div>
 
-  <script>
-    const input = document.getElementById("userInput");
-    const output = document.getElementById("output");
-    const btn = document.getElementById("runBtn");
+  <div id="dialogueUI">
+    <div id="choices">
+      <button id="yesBtn" class="choiceBtn">YES</button>
+      <div id="midMsg">try again.</div>
+      <button id="noBtn" class="choiceBtn">NO</button>
+    </div>
+  </div>
 
-    function run() {
-      const text = input.value.trim();
-      if (!text) {
-        output.textContent = "Type something first.";
-        return;
-      }
-      // Demo behavior: reverse the text + show length
-      const reversed = text.split("").reverse().join("");
-      output.textContent = `You typed: ${text}\nLength: ${text.length}\nReversed: ${reversed}`;
+  <div id="endOverlay">The End</div>
+
+<script>
+(() => {
+  // =========================
+  // SETTINGS / TOGGLES
+  // =========================
+  const SETTINGS = {
+    allowLeftClickMove: false,     // keep League-style (right click) by default
+    autoTriggerAngelWhenClose: false, // if true, walking near Angel starts cutscene without clicking
+    pixelScale: { w: 320, h: 180 }, // internal resolution for pixel vibe
+  };
+
+  // =========================
+  // DOM / CANVAS
+  // =========================
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+
+  const statusEl = document.getElementById("status");
+  const dialogueUI = document.getElementById("dialogueUI");
+  const yesBtn = document.getElementById("yesBtn");
+  const noBtn = document.getElementById("noBtn");
+  const midMsg = document.getElementById("midMsg");
+  const endOverlay = document.getElementById("endOverlay");
+
+  const W = SETTINGS.pixelScale.w;
+  const H = SETTINGS.pixelScale.h;
+
+  const off = document.createElement("canvas");
+  off.width = W; off.height = H;
+  const octx = off.getContext("2d");
+
+  function resize() {
+    const aspect = canvas.width / canvas.height;
+    const ww = window.innerWidth, wh = window.innerHeight;
+    let w = ww, h = ww / aspect;
+    if (h > wh) { h = wh; w = wh * aspect; }
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // prevent right-click menu
+  window.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  // =========================
+  // HELPERS
+  // =========================
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const dist  = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+
+  function rectsOverlap(a, b) {
+    return !(a.x + a.w <= b.x || a.x >= b.x + b.w || a.y + a.h <= b.y || a.y >= b.y + b.h);
+  }
+
+  function screenToWorld(e) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = (e.clientX - rect.left) / rect.width;
+    const sy = (e.clientY - rect.top) / rect.height;
+    return { x: sx * W, y: sy * H };
+  }
+
+  // Normalize click buttons for trackpads/browsers
+  function normalizeButton(e) {
+    // pointer events may provide buttons bitmask
+    if ((e.buttons & 1) === 1) return 0; // left
+    if ((e.buttons & 2) === 2) return 2; // right
+    return e.button ?? 0;
+  }
+
+  // =========================
+  // CAMERA
+  // =========================
+  const camera = { x: 0, y: 0 };
+  function follow(target) {
+    camera.x = target.x + target.w/2 - W/2;
+    camera.y = target.y + target.h/2 - H/2;
+  }
+
+  // =========================
+  // PLAYER + SPRITES
+  // =========================
+  function makePlayer() {
+    return {
+      name: "Kaitlyn",
+      x: 0, y: 0,
+      w: 10, h: 12,
+      speed: 55,
+      target: null,
+      moving: false,
+      canControl: false,
+      facing: "down",
+      pose: "stand", // stand | sit | hug
+      intro: { active: true, t: 0, phase: 0 }, // bedroom intro
+    };
+  }
+
+  function drawKaitlyn(ctx, p, pose="stand") {
+    const hair = "#d8b15e";
+    const hair2 = "#b78b3d";
+    const skin = "#f3caa5";
+    const dress = "#f2e8f5";
+    const outline = "rgba(0,0,0,0.35)";
+
+    ctx.save();
+    ctx.translate(Math.round(p.x), Math.round(p.y));
+
+    // shadow
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.ellipse(p.w/2, p.h+2, p.w/2+1, 2, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    const sitting = (pose === "sit" || pose === "hug");
+    const bodyY = sitting ? 7 : 6;
+    const headY = sitting ? 2 : 1;
+
+    // legs
+    ctx.fillStyle = "#caa6a6";
+    if (!sitting) {
+      ctx.fillRect(2, p.h-2, 2, 2);
+      ctx.fillRect(p.w-4, p.h-2, 2, 2);
+    } else {
+      ctx.fillRect(3, p.h-3, 4, 2);
     }
 
-    btn.addEventListener("click", run);
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
-  </script>
+    // dress
+    ctx.fillStyle = dress;
+    ctx.fillRect(1, bodyY, p.w-2, sitting ? 5 : 6);
+
+    // head
+    ctx.fillStyle = skin;
+    ctx.fillRect(2, headY, p.w-4, 6);
+
+    // hair
+    ctx.fillStyle = hair;
+    ctx.fillRect(1, headY-1, p.w-2, 3);
+    ctx.fillRect(1, headY, 2, 6);
+    ctx.fillRect(p.w-3, headY, 2, 6);
+
+    ctx.fillStyle = hair2;
+    ctx.fillRect(2, headY-1, p.w-4, 1);
+    ctx.fillRect(1, headY+1, 1, 4);
+    ctx.fillRect(p.w-2, headY+1, 1, 4);
+
+    // eyes
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(4, headY+2, 1, 1);
+    ctx.fillRect(p.w-5, headY+2, 1, 1);
+
+    // hug overlay
+    if (pose === "hug") {
+      ctx.fillStyle = "rgba(0,0,0,0.12)";
+      ctx.fillRect(2, bodyY+2, p.w-4, 2);
+    }
+
+    ctx.strokeStyle = outline;
+    ctx.strokeRect(1, headY, p.w-2, p.h-1);
+
+    ctx.restore();
+  }
+
+  function drawAngel(ctx, a, pose="sit", glow=0) {
+    const hair = "#161616";
+    const hair2 = "#2a2a2a";
+    const skin = "#e9c3a0";
+    const hoodie = "#f3f3f3";
+    const outline = "rgba(0,0,0,0.35)";
+
+    ctx.save();
+    ctx.translate(Math.round(a.x), Math.round(a.y));
+
+    if (glow > 0.01) {
+      ctx.globalAlpha = 0.22 * glow;
+      ctx.fillStyle = "#ffd36a";
+      ctx.fillRect(-8, -8, a.w+16, a.h+16);
+      ctx.globalAlpha = 1;
+    }
+
+    // shadow
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.ellipse(a.w/2, a.h+2, a.w/2+1, 2, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    const sitting = (pose === "sit" || pose === "hug");
+    const bodyY = sitting ? 7 : 6;
+    const headY = sitting ? 2 : 1;
+
+    // hoodie
+    ctx.fillStyle = hoodie;
+    ctx.fillRect(1, bodyY, a.w-2, sitting ? 5 : 6);
+
+    // head
+    ctx.fillStyle = skin;
+    ctx.fillRect(2, headY, a.w-4, 6);
+
+    // curly hair
+    ctx.fillStyle = hair;
+    for (let i = 1; i < a.w-1; i += 2) ctx.fillRect(i, headY-1, 1, 2);
+    ctx.fillRect(1, headY, a.w-2, 2);
+    ctx.fillRect(1, headY+1, 2, 5);
+    ctx.fillRect(a.w-3, headY+1, 2, 5);
+
+    ctx.fillStyle = hair2;
+    ctx.fillRect(2, headY, a.w-4, 1);
+
+    // eyes
+    ctx.fillStyle = "#111";
+    ctx.fillRect(4, headY+2, 1, 1);
+    ctx.fillRect(a.w-5, headY+2, 1, 1);
+
+    // flowers + chocolates
+    if (sitting) {
+      ctx.fillStyle = "#8cff6a"; ctx.fillRect(2, bodyY+1, 2, 2);
+      ctx.fillStyle = "#ff5a7a"; ctx.fillRect(4, bodyY+1, 2, 2);
+      ctx.fillStyle = "#ffd36a"; ctx.fillRect(3, bodyY+3, 2, 1);
+
+      ctx.fillStyle = "#4a2b1a"; ctx.fillRect(a.w-5, bodyY+1, 3, 2);
+      ctx.fillStyle = "rgba(255,255,255,0.20)"; ctx.fillRect(a.w-5, bodyY+1, 3, 1);
+    }
+
+    ctx.strokeStyle = outline;
+    ctx.strokeRect(1, headY, a.w-2, a.h-1);
+    ctx.restore();
+  }
+
+  // =========================
+  // UI (Choices)
+  // =========================
+  function hideChoices() {
+    dialogueUI.style.display = "none";
+    midMsg.style.display = "none";
+  }
+
+  function applyYesSize(scale) {
+    const basePadX = 16, basePadY = 10;
+    const padX = Math.round(basePadX * scale);
+    const padY = Math.round(basePadY * scale);
+    const font = Math.round(14 * scale);
+
+    yesBtn.style.padding = `${padY}px ${padX}px`;
+    yesBtn.style.fontSize = `${font}px`;
+  }
+
+  // =========================
+  // SCENES
+  // =========================
+  class Scene {
+    constructor(name) { this.name = name; }
+    update(dt) {}
+    render(ctx) {}
+    onPointerDown(world, button) {}
+  }
+
+  // ---------- Movement helper shared by scenes ----------
+  function moveEntityWithCollisions(entity, dt, worldW, worldH, colliders) {
+    if (!entity.target || !entity.moving) return;
+
+    const tx = entity.target.x, ty = entity.target.y;
+    const cx = entity.x + entity.w/2, cy = entity.y + entity.h/2;
+    const dx = tx - cx, dy = ty - cy;
+    const d = Math.hypot(dx, dy);
+
+    if (d < 2) { entity.moving = false; return; }
+
+    const vx = (dx / d) * entity.speed;
+    const vy = (dy / d) * entity.speed;
+
+    let nx = entity.x + vx * dt;
+    let ny = entity.y;
+
+    nx = clamp(nx, 0, worldW - entity.w);
+    const testX = { x: nx, y: ny, w: entity.w, h: entity.h };
+    for (const c of colliders) {
+      if (rectsOverlap(testX, c)) { nx = entity.x; break; }
+    }
+
+    ny = entity.y + vy * dt;
+    ny = clamp(ny, 0, worldH - entity.h);
+    const testY = { x: nx, y: ny, w: entity.w, h: entity.h };
+    for (const c of colliders) {
+      if (rectsOverlap(testY, c)) { ny = entity.y; break; }
+    }
+
+    entity.x = nx;
+    entity.y = ny;
+  }
+
+  // ---------- Bedroom Scene ----------
+  class BedroomScene extends Scene {
+    constructor(player, goToScene) {
+      super("bedroom");
+      this.player = player;
+      this.goToScene = goToScene;
+
+      this.world = { w: 420, h: 260 };
+
+      this.bed     = { x: 42,  y: 56,  w: 44, h: 22 };
+      this.desk    = { x: 245, y: 60,  w: 36, h: 16 };
+      this.chair   = { x: 262, y: 80,  w: 12, h: 10 };
+      this.dresser = { x: 60,  y: 178, w: 30, h: 18 };
+      this.closet  = { x: 300, y: 170, w: 52, h: 24 };
+      this.carpet  = { x: 160, y: 120, w: 85, h: 55 };
+
+      this.colliders = [this.bed, this.desk, this.chair, this.dresser, this.closet];
+
+      this.door = { x: this.world.w - 14, y: Math.floor(this.world.h/2) - 18, w: 10, h: 36 };
+      this.doorGlow = 0;
+
+      this.posters = [
+        { x: 120, y: 20, w: 18, h: 26, c: "#b14cff" },
+        { x: 145, y: 22, w: 16, h: 22, c: "#3ad1ff" },
+        { x: 180, y: 18, w: 22, h: 30, c: "#ff5a7a" },
+        { x: 210, y: 24, w: 16, h: 20, c: "#8cff6a" },
+      ];
+
+      // Spawn on FLOOR near bed (not inside collider)
+      this.player.x = this.bed.x + 12;
+      this.player.y = this.bed.y + this.bed.h + 2;
+      this.player.target = null;
+      this.player.moving = false;
+      this.player.canControl = false;
+
+      this.player.pose = "stand";
+      this.player.intro.active = true;
+      this.player.intro.t = 0;
+      this.player.intro.phase = 0;
+
+      statusEl.textContent = " | Kaitlyn wakes up...";
+    }
+
+    clampCamera() {
+      camera.x = clamp(camera.x, 0, this.world.w - W);
+      camera.y = clamp(camera.y, 0, this.world.h - H);
+    }
+
+    update(dt) {
+      const p = this.player;
+
+      // Intro animation: "get out of bed" feel without collision problems
+      if (p.intro.active) {
+        p.intro.t += dt;
+
+        if (p.intro.phase === 0 && p.intro.t > 0.5) {
+          p.intro.phase = 1;
+          statusEl.textContent = " | ...getting out of bed.";
+          // tiny step forward
+          p.target = { x: p.x + p.w/2, y: p.y + 10 + p.h/2 };
+          p.moving = true;
+        }
+
+        if (p.intro.phase === 1) {
+          moveEntityWithCollisions(p, dt, this.world.w, this.world.h, this.colliders);
+          if (!p.moving) {
+            p.intro.active = false;
+            p.canControl = true;
+            statusEl.textContent = " | Find the door on the right.";
+          }
+        }
+      } else {
+        moveEntityWithCollisions(p, dt, this.world.w, this.world.h, this.colliders);
+      }
+
+      // Door glow when near
+      const nearDoor = dist(
+        p.x + p.w/2, p.y + p.h/2,
+        this.door.x + this.door.w/2, this.door.y + this.door.h/2
+      ) < 28;
+
+      const targetGlow = nearDoor ? 1 : 0;
+      this.doorGlow += (targetGlow - this.doorGlow) * clamp(dt * 10, 0, 1);
+
+      follow(p);
+      this.clampCamera();
+    }
+
+    onPointerDown(world, button) {
+      const p = this.player;
+
+      // Movement: right click (and optional left click)
+      const moveClick = (button === 2) || (SETTINGS.allowLeftClickMove && button === 0);
+      if (moveClick) {
+        if (!p.canControl) return;
+        p.target = {
+          x: clamp(world.x, 0, this.world.w),
+          y: clamp(world.y, 0, this.world.h),
+        };
+        p.moving = true;
+        return;
+      }
+
+      // Interact with door: left click when near
+      if (button === 0) {
+        const nearDoor = dist(
+          p.x + p.w/2, p.y + p.h/2,
+          this.door.x + this.door.w/2, this.door.y + this.door.h/2
+        ) < 28;
+
+        if (nearDoor) {
+          // Instantly go to park (no black screen)
+          this.goToScene("park");
+        }
+      }
+    }
+
+    render(ctx) {
+      ctx.fillStyle = "#2a2030";
+      ctx.fillRect(0, 0, W, H);
+
+      const rx = -camera.x, ry = -camera.y;
+
+      // room base
+      ctx.fillStyle = "#3a2d42";
+      ctx.fillRect(rx, ry, this.world.w, this.world.h);
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.strokeRect(rx + 2, ry + 2, this.world.w - 4, this.world.h - 4);
+
+      // posters
+      for (const p of this.posters) {
+        ctx.fillStyle = "rgba(0,0,0,0.2)";
+        ctx.fillRect(rx + p.x + 1, ry + p.y + 1, p.w, p.h);
+        ctx.fillStyle = p.c;
+        ctx.fillRect(rx + p.x, ry + p.y, p.w, p.h);
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
+        ctx.fillRect(rx + p.x + 2, ry + p.y + 2, p.w - 4, 2);
+      }
+
+      // carpet
+      ctx.fillStyle = "#5b3b67";
+      ctx.fillRect(rx + this.carpet.x, ry + this.carpet.y, this.carpet.w, this.carpet.h);
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      ctx.strokeRect(rx + this.carpet.x, ry + this.carpet.y, this.carpet.w, this.carpet.h);
+
+      const drawBox = (o, fill) => {
+        ctx.fillStyle = fill;
+        ctx.fillRect(rx + o.x, ry + o.y, o.w, o.h);
+        ctx.strokeStyle = "rgba(0,0,0,0.35)";
+        ctx.strokeRect(rx + o.x, ry + o.y, o.w, o.h);
+      };
+
+      // bed
+      drawBox(this.bed, "#875a6a");
+      ctx.fillStyle = "#e7d9e1";
+      ctx.fillRect(rx + this.bed.x + 4, ry + this.bed.y + 3, 14, 6);
+      ctx.fillStyle = "rgba(0,0,0,0.12)";
+      ctx.fillRect(rx + this.bed.x + 2, ry + this.bed.y + 12, this.bed.w - 4, 2);
+
+      // desk + chair + dresser + closet
+      drawBox(this.desk, "#7c5c3c");
+      drawBox(this.chair, "#6a4d35");
+      ctx.fillStyle = "#1b1b22";
+      ctx.fillRect(rx + this.desk.x + 6, ry + this.desk.y + 2, 10, 6);
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fillRect(rx + this.desk.x + 7, ry + this.desk.y + 3, 8, 2);
+
+      drawBox(this.dresser, "#6a3f2b");
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.fillRect(rx + this.dresser.x + 4, ry + this.dresser.y + 4, this.dresser.w - 8, 2);
+      ctx.fillRect(rx + this.dresser.x + 4, ry + this.dresser.y + 10, this.dresser.w - 8, 2);
+
+      drawBox(this.closet, "#3e4a52");
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.fillRect(rx + this.closet.x + this.closet.w/2 - 1, ry + this.closet.y + 2, 2, this.closet.h - 4);
+
+      // door
+      const d = this.door;
+      ctx.fillStyle = "#1b121f";
+      ctx.fillRect(rx + d.x - 2, ry + d.y - 2, d.w + 4, d.h + 4);
+
+      if (this.doorGlow > 0.01) {
+        ctx.globalAlpha = 0.25 * this.doorGlow;
+        ctx.fillStyle = "#ffd36a";
+        ctx.fillRect(rx + d.x - 6, ry + d.y - 6, d.w + 12, d.h + 12);
+        ctx.globalAlpha = 1;
+        statusEl.textContent = " | Door is glowing... left-click it.";
+      }
+
+      ctx.fillStyle = "#2d1d32";
+      ctx.fillRect(rx + d.x, ry + d.y, d.w, d.h);
+      ctx.fillStyle = "#d1b26a";
+      ctx.fillRect(rx + d.x + d.w - 3, ry + d.y + Math.floor(d.h/2), 2, 2);
+
+      // player
+      drawKaitlyn(ctx, { x: rx + this.player.x, y: ry + this.player.y, w: this.player.w, h: this.player.h }, this.player.pose);
+    }
+  }
+
+  // ---------- Park Scene ----------
+  class ParkScene extends Scene {
+    constructor(player) {
+      super("park");
+      this.player = player;
+      this.world = { w: 600, h: 360 };
+
+      // path
+      this.path = [
+        { x: 70, y: 300 }, { x: 150, y: 260 }, { x: 230, y: 230 },
+        { x: 310, y: 210 }, { x: 400, y: 200 }, { x: 490, y: 180 }, { x: 520, y: 140 }
+      ];
+
+      // pond
+      this.pond = { x: 370, y: 250, w: 140, h: 80 };
+
+      // trees (colliders)
+      this.trees = [];
+      const treeSpots = [
+        [70,70],[120,90],[170,60],[220,85],[260,60],
+        [520,60],[560,110],[90,340],[140,320],[200,340],
+        [30,210],[560,270],[500,310],[430,80],[470,110]
+      ];
+      for (const [x,y] of treeSpots) this.trees.push({ x, y, w: 18, h: 18 });
+
+      // flowers (lots)
+      this.flowers = [];
+      for (let i = 0; i < 420; i++) {
+        this.flowers.push({
+          x: Math.random() * this.world.w,
+          y: Math.random() * this.world.h,
+          c: ["#ff5a7a","#ffd36a","#8cff6a","#3ad1ff","#b14cff"][Math.floor(Math.random()*5)],
+          s: 1 + Math.floor(Math.random()*2)
+        });
+      }
+
+      // birds
+      this.birds = [];
+      for (let i = 0; i < 9; i++) {
+        this.birds.push({
+          x: 60 + Math.random()*this.world.w,
+          y: 40 + Math.random()*130,
+          vx: 10 + Math.random()*22
+        });
+      }
+
+      // bench + Angel
+      this.bench = { x: 520, y: 120, w: 40, h: 14 };
+      this.angel = { name:"Angel", x: this.bench.x + 18, y: this.bench.y - 2, w: 10, h: 12 };
+      this.angelGlow = 0;
+
+      // event state machine
+      this.event = {
+        stage: "idle", // idle -> approachLock -> sitAnim -> choice -> hug -> end
+        t: 0,
+        bubble: { show: false, text: "will you be my valentine?" },
+        yesScale: 1,
+        noCount: 0
+      };
+
+      // spawn player near path start
+      this.player.x = 80;
+      this.player.y = 300;
+      this.player.target = null;
+      this.player.moving = false;
+      this.player.canControl = true;
+      this.player.pose = "stand";
+
+      hideChoices();
+      endOverlay.style.display = "none";
+      statusEl.textContent = " | Follow the path...";
+    }
+
+    getColliders() {
+      const pondCollider = { x: this.pond.x + 12, y: this.pond.y + 12, w: this.pond.w - 24, h: this.pond.h - 24 };
+      const benchCollider = { x: this.bench.x, y: this.bench.y, w: this.bench.w, h: this.bench.h };
+      return [...this.trees, pondCollider, benchCollider];
+    }
+
+    clampCamera() {
+      camera.x = clamp(camera.x, 0, this.world.w - W);
+      camera.y = clamp(camera.y, 0, this.world.h - H);
+    }
+
+    beginAngelSequence() {
+      const p = this.player;
+      if (this.event.stage !== "idle") return;
+
+      p.canControl = false;
+      p.target = null;
+      p.moving = false;
+
+      this.event.stage = "approachLock";
+      this.event.t = 0;
+      this.event.bubble.show = false;
+      statusEl.textContent = " | ";
+    }
+
+    showChoiceUI() {
+      // reset choice growth
+      this.event.yesScale = 1;
+      this.event.noCount = 0;
+      applyYesSize(1);
+      midMsg.style.display = "none";
+
+      dialogueUI.style.display = "block";
+      this.event.stage = "choice";
+      this.event.bubble.show = true;
+    }
+
+    updateEvent(dt) {
+      const ev = this.event;
+      const p = this.player;
+
+      if (ev.stage === "approachLock" || ev.stage === "sitAnim" || ev.stage === "hug") {
+        ev.t += dt;
+      }
+
+      if (ev.stage === "approachLock") {
+        // failsafe: if anything blocks movement, show question anyway
+        if (ev.t > 1.2) {
+          p.moving = false;
+          p.target = null;
+          p.pose = "sit";
+          ev.stage = "sitAnim";
+          ev.t = 0;
+          return;
+        }
+
+        // autopilot to sit spot
+        const sitSpot = { x: this.bench.x + 8, y: this.bench.y + 3 };
+        if (!p.moving) {
+          p.target = { x: sitSpot.x + p.w/2, y: sitSpot.y + p.h/2 };
+          p.moving = true;
+        }
+        moveEntityWithCollisions(p, dt, this.world.w, this.world.h, this.getColliders());
+
+        if (dist(p.x, p.y, sitSpot.x, sitSpot.y) < 2.5) {
+          p.moving = false;
+          p.target = null;
+          p.pose = "sit";
+          ev.stage = "sitAnim";
+          ev.t = 0;
+        }
+      }
+
+      if (ev.stage === "sitAnim") {
+        if (ev.t > 0.45) {
+          this.showChoiceUI();
+        }
+      }
+
+      if (ev.stage === "hug") {
+        if (ev.t > 1.0) {
+          ev.stage = "end";
+          endOverlay.style.display = "flex";
+          hideChoices();
+          ev.bubble.show = false;
+        }
+      }
+    }
+
+    update(dt) {
+      // birds
+      for (const b of this.birds) {
+        b.x += b.vx * dt;
+        if (b.x > this.world.w + 40) b.x = -40;
+      }
+
+      // player movement
+      if (this.player.canControl) {
+        moveEntityWithCollisions(this.player, dt, this.world.w, this.world.h, this.getColliders());
+        this.player.pose = "stand";
+      }
+
+      // Angel glow + interaction hint
+      const p = this.player;
+      const nearAngel = dist(
+        p.x + p.w/2, p.y + p.h/2,
+        this.angel.x + this.angel.w/2, this.angel.y + this.angel.h/2
+      ) < 55;
+
+      const targetGlow = (nearAngel && this.event.stage === "idle") ? 1 : 0;
+      this.angelGlow += (targetGlow - this.angelGlow) * clamp(dt * 10, 0, 1);
+
+      if (this.event.stage === "idle" && this.angelGlow > 0.2) {
+        statusEl.textContent = " | Angel is glowing... left-click him.";
+        if (SETTINGS.autoTriggerAngelWhenClose) this.beginAngelSequence();
+      }
+
+      this.updateEvent(dt);
+
+      follow(p);
+      this.clampCamera();
+    }
+
+    onPointerDown(world, button) {
+      const p = this.player;
+      const ev = this.event;
+
+      // If choice UI or ending is active, ignore canvas clicks
+      if (ev.stage === "choice" || ev.stage === "hug" || ev.stage === "end") return;
+
+      // Move (right click, optional left click)
+      const moveClick = (button === 2) || (SETTINGS.allowLeftClickMove && button === 0);
+      if (moveClick) {
+        if (!p.canControl) return;
+        p.target = { x: clamp(world.x, 0, this.world.w), y: clamp(world.y, 0, this.world.h) };
+        p.moving = true;
+        return;
+      }
+
+      // Interact (left click): if near Angel, start sequence (no hitbox required)
+      if (button === 0 && ev.stage === "idle") {
+        const nearAngel = dist(
+          p.x + p.w/2, p.y + p.h/2,
+          this.angel.x + this.angel.w/2, this.angel.y + this.angel.h/2
+        ) < 70; // forgiving radius
+
+        if (nearAngel) this.beginAngelSequence();
+      }
+    }
+
+    render(ctx) {
+      // base
+      ctx.fillStyle = "#244224";
+      ctx.fillRect(0, 0, W, H);
+
+      const rx = -camera.x, ry = -camera.y;
+
+      // grass
+      ctx.fillStyle = "#2d5b2d";
+      ctx.fillRect(rx, ry, this.world.w, this.world.h);
+
+      // flowers
+      for (const f of this.flowers) {
+        const x = rx + f.x, y = ry + f.y;
+        if (x < -5 || y < -5 || x > W+5 || y > H+5) continue;
+        ctx.fillStyle = f.c;
+        ctx.fillRect(Math.round(x), Math.round(y), f.s, f.s);
+      }
+
+      // path
+      ctx.strokeStyle = "rgba(245, 230, 195, 0.92)";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      for (let i = 0; i < this.path.length; i++) {
+        const p = this.path[i];
+        const x = rx + p.x, y = ry + p.y;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // pond
+      ctx.fillStyle = "#2c5fa8";
+      ctx.beginPath();
+      ctx.ellipse(rx + this.pond.x + this.pond.w/2, ry + this.pond.y + this.pond.h/2, this.pond.w/2, this.pond.h/2, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.ellipse(rx + this.pond.x + this.pond.w/2 - 18, ry + this.pond.y + this.pond.h/2 - 12, this.pond.w/2 - 26, this.pond.h/2 - 26, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // trees
+      for (const t of this.trees) {
+        ctx.fillStyle = "#5a3c22";
+        ctx.fillRect(rx + t.x + 7, ry + t.y + 10, 4, 8);
+        ctx.fillStyle = "#163d16";
+        ctx.fillRect(rx + t.x, ry + t.y, t.w, t.h);
+      }
+
+      // birds
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      for (const b of this.birds) {
+        const x = rx + b.x, y = ry + b.y;
+        if (x < -10 || x > W+10) continue;
+        ctx.fillRect(Math.round(x), Math.round(y), 2, 1);
+        ctx.fillRect(Math.round(x)+3, Math.round(y)+1, 2, 1);
+      }
+
+      // bench
+      const bn = this.bench;
+      ctx.fillStyle = "#6a4d35";
+      ctx.fillRect(rx + bn.x, ry + bn.y, bn.w, bn.h);
+      ctx.fillStyle = "#4f3727";
+      ctx.fillRect(rx + bn.x + 4, ry + bn.y + bn.h, 4, 4);
+      ctx.fillRect(rx + bn.x + bn.w - 8, ry + bn.y + bn.h, 4, 4);
+
+      // angel
+      const angelPose = (this.event.stage === "hug" || this.event.stage === "end") ? "hug" : "sit";
+      drawAngel(ctx, { x: rx + this.angel.x, y: ry + this.angel.y, w: this.angel.w, h: this.angel.h }, angelPose, this.angelGlow);
+
+      // player
+      const p = this.player;
+      const pPose = (this.event.stage === "hug" || this.event.stage === "end") ? "hug"
+                   : (this.event.stage === "sitAnim" || this.event.stage === "choice") ? "sit"
+                   : "stand";
+      drawKaitlyn(ctx, { x: rx + p.x, y: ry + p.y, w: p.w, h: p.h }, pPose);
+
+      // speech bubble
+      if (this.event.bubble.show) {
+        const bx = rx + this.angel.x + this.angel.w/2;
+        const by = ry + this.angel.y - 14;
+        const bw = 150, bh = 20;
+        const x = Math.round(bx - bw/2);
+        const y = Math.round(by - bh);
+
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(x, y, bw, bh);
+        ctx.strokeStyle = "rgba(255,255,255,0.18)";
+        ctx.strokeRect(x, y, bw, bh);
+
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(Math.round(bx)-2, y+bh, 4, 4);
+
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.font = "8px system-ui, Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(this.event.bubble.text, x + bw/2, y + bh/2 + 1);
+      }
+    }
+  }
+
+  // =========================
+  // GAME FLOW
+  // =========================
+  const player = makePlayer();
+  let scene = null;
+
+  function goToScene(name) {
+    hideChoices();
+    endOverlay.style.display = "none";
+
+    if (name === "bedroom") scene = new BedroomScene(player, goToScene);
+    if (name === "park") scene = new ParkScene(player);
+  }
+
+  goToScene("bedroom");
+
+  // =========================
+  // POINTER INPUT (reliable)
+  // =========================
+  canvas.addEventListener("pointerdown", (e) => {
+    canvas.setPointerCapture?.(e.pointerId);
+    const local = screenToWorld(e);
+    const world = { x: local.x + camera.x, y: local.y + camera.y };
+    const btn = normalizeButton(e);
+    scene.onPointerDown(world, btn);
+  });
+
+  // =========================
+  // CHOICE BUTTONS
+  // =========================
+  yesBtn.addEventListener("click", () => {
+    if (!(scene instanceof ParkScene)) return;
+    const ev = scene.event;
+    if (ev.stage !== "choice") return;
+
+    // hug + end
+    ev.stage = "hug";
+    ev.t = 0;
+    ev.bubble.show = false;
+
+    hideChoices();
+  });
+
+  noBtn.addEventListener("click", () => {
+    if (!(scene instanceof ParkScene)) return;
+    const ev = scene.event;
+    if (ev.stage !== "choice") return;
+
+    ev.noCount += 1;
+    midMsg.style.display = "inline-flex";
+    midMsg.textContent = "try again.";
+
+    // make YES grow
+    ev.yesScale = 1 + ev.noCount * 0.18;
+    applyYesSize(ev.yesScale);
+
+    if (ev.yesScale >= 2.2) midMsg.textContent = "try again 🙂";
+  });
+
+  // =========================
+  // MAIN LOOP
+  // =========================
+  let last = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.033, (now - last) / 1000);
+    last = now;
+
+    scene.update(dt);
+
+    octx.clearRect(0, 0, W, H);
+    scene.render(octx);
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // Show choice UI from ParkScene (needs access to DOM)
+  // (kept here after definitions so it can use yesBtn/noBtn vars)
+  const originalParkShow = ParkScene.prototype.showChoiceUI;
+  ParkScene.prototype.showChoiceUI = function() {
+    originalParkShow.call(this);
+    dialogueUI.style.display = "block";
+  };
+
+})();
+</script>
 </body>
 </html>
