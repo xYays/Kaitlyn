@@ -1017,11 +1017,22 @@
   });
 
   // ---------- Input ----------
-  canvas.addEventListener("mousedown", (e) => {
-    const local = screenToWorld(e);
-    const world = { x: local.x + camera.x, y: local.y + camera.y };
-    scene.onMouseDown(e, world, e.button);
-  });
+  function normalizeButton(e) {
+  // pointer events + trackpads can be weird; normalize using `buttons` bitmask too
+  if ((e.buttons & 1) === 1) return 0; // left
+  if ((e.buttons & 2) === 2) return 2; // right
+  return e.button ?? 0;
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  canvas.setPointerCapture?.(e.pointerId);
+
+  const local = screenToWorld(e);
+  const wpos = { x: local.x + camera.x, y: local.y + camera.y };
+
+  const btn = normalizeButton(e);
+  scene.onMouseDown(e, wpos, btn);
+});
 
   // ---------- Main loop ----------
   let last = performance.now();
