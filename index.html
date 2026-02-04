@@ -663,7 +663,7 @@
 
       // Angel glow when near (unless end)
       const p = this.player;
-      const nearAngel = dist(p.x + p.w/2, p.y + p.h/2, this.angel.x + this.angel.w/2, this.angel.y + this.angel.h/2) < 28;
+      const nearAngel = dist(p.x + p.w/2, p.y + p.h/2, this.angel.x + this.angel.w/2, this.angel.y + this.angel.h/2) < 55;
       const targetGlow = (nearAngel && this.event.stage === "idle") ? 1 : 0;
       this.angelGlow += (targetGlow - this.angelGlow) * clamp(dt * 8, 0, 1);
 
@@ -787,13 +787,12 @@
 
       // Left click: interact with Angel if near and glowing
       if (button === 0 && this.event.stage === "idle") {
-        const nearAngel = dist(p.x + p.w/2, p.y + p.h/2, this.angel.x + this.angel.w/2, this.angel.y + this.angel.h/2) < 28;
+        const nearAngel = dist(
+          p.x + p.w/2, p.y + p.h/2,
+          this.angel.x + this.angel.w/2, this.angel.y + this.angel.h/2
+        ) < 55;
 
-        const clickedAngel =
-          world.x >= this.angel.x - 6 && world.x <= this.angel.x + this.angel.w + 6 &&
-          world.y >= this.angel.y - 6 && world.y <= this.angel.y + this.angel.h + 6;
-
-        if (nearAngel && clickedAngel) {
+        if (nearAngel) {
           // Lock player, start sit sequence
           p.canControl = false;
           p.target = null;
@@ -801,7 +800,6 @@
           this.event.started = true;
           this.event.stage = "approachLock";
           this.event.t = 0;
-          statusEl.textContent = " | ";
         }
       }
     }
